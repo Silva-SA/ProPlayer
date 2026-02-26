@@ -3,7 +3,7 @@
     <application
         android:allowBackup="true"
         android:label="LREC Operator"
-        android:theme="@style/Theme.Material3.DayNight.NoActionBar">
+        android:theme="@style/Theme.LRECOperator">
 
         <activity
             android:name=".MainActivity"
