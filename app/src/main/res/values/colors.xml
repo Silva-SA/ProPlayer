@@ -1,0 +1,8 @@
+<resources>
+    <color name="md_theme_light_primary">#6200EE</color>
+    <color name="md_theme_light_onPrimary">#FFFFFF</color>
+    <color name="md_theme_dark_primary">#BB86FC</color>
+    <color name="md_theme_dark_onPrimary">#000000</color>
+
+    <color name="player_control_bg">#66000000</color> <!-- شفاف داكن -->
+</resources>
