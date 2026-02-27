@@ -1,16 +1,24 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
 
-    <style name="Theme.LREC_Operator" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/md_theme_light_primary</item>
-        <item name="colorPrimaryVariant">@color/md_theme_light_primary_variant</item>
-        <item name="colorOnPrimary">@color/md_theme_light_onPrimary</item>
-        <item name="colorSecondary">@color/md_theme_light_secondary</item>
-        <item name="colorOnSecondary">@color/md_theme_light_onSecondary</item>
-        <item name="android:statusBarColor">@color/md_theme_light_primary_variant</item>
-        <item name="android:navigationBarColor">@color/md_theme_light_primary</item>
-        <item name="colorPrimary">@color/md_theme_light_primary</item>
-        <item name="colorOnPrimary">@color/md_theme_light_onPrimary</item>
-        <item name="android:navigationBarColor">@color/md_theme_dark_primary</item>
-    </style>
+    <!-- Primary Colors -->
+    <color name="md_theme_light_primary">#6200EE</color>
+    <color name="md_theme_light_primary_variant">#3700B3</color>
+    <color name="md_theme_light_onPrimary">#FFFFFF</color>
+
+    <!-- Secondary -->
+    <color name="md_theme_light_secondary">#03DAC5</color>
+    <color name="md_theme_light_onSecondary">#000000</color>
+
+    <!-- Dark Mode Primary -->
+    <color name="md_theme_dark_primary">#BB86FC</color>
+    <color name="md_theme_dark_onPrimary">#000000</color>
+
+    <!-- Background -->
+    <color name="md_theme_light_background">#FFFFFF</color>
+    <color name="md_theme_light_onBackground">#000000</color>
+
+    <!-- Player Overlay -->
+    <color name="player_control_bg">#66000000</color>
 
 </resources>
