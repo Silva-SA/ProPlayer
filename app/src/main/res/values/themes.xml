@@ -1,5 +1,16 @@
-<style name="Theme.LRECOperator" parent="Theme.Material3.DayNight.NoActionBar">
-    <item name="colorPrimary">@color/md_theme_light_primary</item>
-    <item name="colorOnPrimary">@color/md_theme_light_onPrimary</item>
-    <item name="android:navigationBarColor">@color/md_theme_dark_primary</item>
-</style>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="Theme.LREC_Operator" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/md_theme_light_primary</item>
+        <item name="colorPrimaryVariant">@color/md_theme_light_primary_variant</item>
+        <item name="colorOnPrimary">@color/md_theme_light_onPrimary</item>
+        <item name="colorSecondary">@color/md_theme_light_secondary</item>
+        <item name="colorOnSecondary">@color/md_theme_light_onSecondary</item>
+        <item name="android:statusBarColor">@color/md_theme_light_primary_variant</item>
+        <item name="android:navigationBarColor">@color/md_theme_light_primary</item>
+        <item name="colorPrimary">@color/md_theme_light_primary</item>
+        <item name="colorOnPrimary">@color/md_theme_light_onPrimary</item>
+        <item name="android:navigationBarColor">@color/md_theme_dark_primary</item>
+    </style>
+
+</resources>
