@@ -3,10 +3,11 @@ workflows:
     name: LREC Operator Build
     max_build_duration: 60
     environment:
-      vars:
-        PACKAGE_NAME: "com.lrec.operator"
       java: 17
     scripts:
+      - name: Generate Gradle Wrapper
+        script: |
+          gradle wrapper
       - name: Build Debug APK
         script: |
           ./gradlew assembleDebug
