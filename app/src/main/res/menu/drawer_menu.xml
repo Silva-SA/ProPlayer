@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/nav_pick"
+        android:title="اختيار فيديو" />
+
+    <item
+        android:id="@+id/nav_speed"
+        android:title="سرعة التشغيل" />
+
+    <item
+        android:id="@+id/nav_theme"
+        android:title="تبديل المظهر" />
+
+</menu>
