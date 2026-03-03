@@ -5,7 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.GestureDetector
 import android.view.MotionEvent
-import android.view.WindowManager
+import android.widget.ImageButton
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
@@ -14,39 +14,72 @@ import androidx.media3.ui.PlayerView
 
 class MainActivity : AppCompatActivity() {
 
-    private var player: ExoPlayer? = null
+    private lateinit var player: ExoPlayer
     private lateinit var playerView: PlayerView
-    private lateinit var gestureDetector: GestureDetector
 
-    private var isAdjustingVolume = false
-    private var isAdjustingBrightness = false
+    private lateinit var btnPlayPause: ImageButton
+    private lateinit var btnForward: ImageButton
+    private lateinit var btnRewind: ImageButton
+
+    private lateinit var gestureDetector: GestureDetector
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        playerView = findViewById(R.id.player_view)
-
+        initializeViews()
         initializePlayer()
+        setupControls()
         setupGestures()
+    }
+
+    private fun initializeViews() {
+        playerView = findViewById(R.id.playerView)
+        btnPlayPause = findViewById(R.id.btnPlayPause)
+        btnForward = findViewById(R.id.btnForward)
+        btnRewind = findViewById(R.id.btnRewind)
     }
 
     private fun initializePlayer() {
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
 
-        val videoUri = Uri.parse("https://www.example.com/sample.mp4")
-        val mediaItem = MediaItem.fromUri(videoUri)
+        // ضع هنا رابط الفيديو أو مسار ملف محلي
+        val mediaItem = MediaItem.fromUri(
+            Uri.parse("https://www.example.com/sample.mp4")
+        )
 
-        player?.setMediaItem(mediaItem)
-        player?.prepare()
-        player?.playWhenReady = true
+        player.setMediaItem(mediaItem)
+        player.prepare()
+        player.playWhenReady = true
 
-        // ضبط سرعة التشغيل (الطريقة الصحيحة في Media3)
-        player?.playbackParameters = PlaybackParameters(1.5f)
+        // سرعة تشغيل افتراضية
+        player.playbackParameters = PlaybackParameters(1.0f)
+    }
+
+    private fun setupControls() {
+
+        btnPlayPause.setOnClickListener {
+            if (player.isPlaying) {
+                player.pause()
+                btnPlayPause.setImageResource(R.drawable.ic_play)
+            } else {
+                player.play()
+                btnPlayPause.setImageResource(R.drawable.ic_pause)
+            }
+        }
+
+        btnForward.setOnClickListener {
+            player.seekTo(player.currentPosition + 10000)
+        }
+
+        btnRewind.setOnClickListener {
+            player.seekTo((player.currentPosition - 10000).coerceAtLeast(0))
+        }
     }
 
     private fun setupGestures() {
+
         gestureDetector = GestureDetector(this,
             object : GestureDetector.SimpleOnGestureListener() {
 
@@ -58,15 +91,13 @@ class MainActivity : AppCompatActivity() {
                 ): Boolean {
 
                     val screenWidth = resources.displayMetrics.widthPixels
-                    val xPosition = e1?.x ?: 0f
-                    val fraction = -distanceY / 1000f
+                    val x = e1?.x ?: 0f
+                    val percent = -distanceY / 1000f
 
-                    if (xPosition < screenWidth / 2) {
-                        isAdjustingBrightness = true
-                        adjustBrightness(fraction)
+                    if (x < screenWidth / 2) {
+                        adjustBrightness(percent)
                     } else {
-                        isAdjustingVolume = true
-                        adjustVolume(fraction)
+                        adjustVolume(percent)
                     }
 
                     return true
@@ -79,33 +110,30 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun adjustVolume(fraction: Float) {
+        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+
+        val change = (fraction * max).toInt()
+        val newVolume = (current + change).coerceIn(0, max)
+
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+    }
+
     private fun adjustBrightness(fraction: Float) {
         val layoutParams = window.attributes
+        var brightness = layoutParams.screenBrightness
 
-        var currentBrightness = layoutParams.screenBrightness
-        if (currentBrightness < 0f) {
-            currentBrightness = 0.5f
-        }
+        if (brightness < 0f) brightness = 0.5f
 
-        val newBrightness = (currentBrightness + fraction).coerceIn(0f, 1f)
-        layoutParams.screenBrightness = newBrightness
+        brightness = (brightness + fraction).coerceIn(0f, 1f)
+        layoutParams.screenBrightness = brightness
         window.attributes = layoutParams
     }
 
-    private fun adjustVolume(fraction: Float) {
-        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-
-        val change = (fraction * maxVol).toInt()
-        val newVol = (currentVol + change).coerceIn(0, maxVol)
-
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
-    }
-
     override fun onDestroy() {
-        player?.release()
-        player = null
+        player.release()
         super.onDestroy()
     }
 }
