@@ -1,142 +1,111 @@
-package com.lrec.operator
+package com.example.lrecoperator
 
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
-import android.widget.ImageButton
-import android.media.AudioManager
+import android.view.GestureDetector
 import android.view.MotionEvent
-import android.view.View
-import androidx.activity.result.contract.ActivityResultContracts
+import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.navigation.NavigationView
 
 class MainActivity : AppCompatActivity() {
 
     private var player: ExoPlayer? = null
-    private var initialY = 0f
-private var isAdjustingVolume = false
-private var isAdjustingBrightness = false
+    private lateinit var playerView: PlayerView
+    private lateinit var gestureDetector: GestureDetector
 
-    private val pickVideo =
-        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-            uri?.let {
-                playVideo(it)
-            }
-        }
+    private var isAdjustingVolume = false
+    private var isAdjustingBrightness = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        window.decorView.systemUiVisibility = (
-        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        or View.SYSTEM_UI_FLAG_FULLSCREEN
-        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-)
 
-        val playerView = findViewById<PlayerView>(R.id.playerView)
-        val drawerLayout = findViewById<DrawerLayout>(R.id.drawerLayout)
-        val navigationView = findViewById<NavigationView>(R.id.navigationView)
-        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+        playerView = findViewById(R.id.player_view)
 
-        setSupportActionBar(toolbar)
+        initializePlayer()
+        setupGestures()
+    }
 
-        toolbar.setNavigationOnClickListener {
-            drawerLayout.openDrawer(GravityCompat.START)
-        }
-
+    private fun initializePlayer() {
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
-        val btnPlayPause = findViewById<ImageButton>(R.id.btnPlayPause)
-val btnRewind = findViewById<ImageButton>(R.id.btnRewind)
-val btnForward = findViewById<ImageButton>(R.id.btnForward)
 
-btnPlayPause.setOnClickListener {
-    if (player?.isPlaying == true) {
-        player?.pause()
-        btnPlayPause.setImageResource(R.drawable.ic_play)
-    } else {
-        player?.play()
-        btnPlayPause.setImageResource(R.drawable.ic_pause)
+        val videoUri = Uri.parse("https://www.example.com/sample.mp4")
+        val mediaItem = MediaItem.fromUri(videoUri)
+
+        player?.setMediaItem(mediaItem)
+        player?.prepare()
+        player?.playWhenReady = true
+
+        // ضبط سرعة التشغيل (الطريقة الصحيحة في Media3)
+        player?.playbackParameters = PlaybackParameters(1.5f)
     }
-}
 
-btnRewind.setOnClickListener {
-    player?.seekBack()
-}
+    private fun setupGestures() {
+        gestureDetector = GestureDetector(this,
+            object : GestureDetector.SimpleOnGestureListener() {
 
-btnForward.setOnClickListener {
-    player?.seekForward()
-}
+                override fun onScroll(
+                    e1: MotionEvent?,
+                    e2: MotionEvent,
+                    distanceX: Float,
+                    distanceY: Float
+                ): Boolean {
 
-        navigationView.setNavigationItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_pick -> {
-                    pickVideo.launch("video/*")
+                    val screenWidth = resources.displayMetrics.widthPixels
+                    val xPosition = e1?.x ?: 0f
+                    val fraction = -distanceY / 1000f
+
+                    if (xPosition < screenWidth / 2) {
+                        isAdjustingBrightness = true
+                        adjustBrightness(fraction)
+                    } else {
+                        isAdjustingVolume = true
+                        adjustVolume(fraction)
+                    }
+
+                    return true
                 }
-                R.id.nav_speed -> {
-                    player?.setPlaybackSpeed(1.5f)
-                }
-                R.id.nav_theme -> {
-                    AppCompatDelegate.setDefaultNightMode(
-                        AppCompatDelegate.MODE_NIGHT_YES
-                    )
-                }
-            }
-            drawerLayout.closeDrawer(GravityCompat.START)
+            })
+
+        playerView.setOnTouchListener { _, event ->
+            gestureDetector.onTouchEvent(event)
             true
         }
     }
 
-    private fun playVideo(uri: Uri) {
-        val mediaItem = MediaItem.fromUri(uri)
-        player?.setMediaItem(mediaItem)
-        player?.prepare()
-        player?.play()
+    private fun adjustBrightness(fraction: Float) {
+        val layoutParams = window.attributes
+
+        var currentBrightness = layoutParams.screenBrightness
+        if (currentBrightness < 0f) {
+            currentBrightness = 0.5f
+        }
+
+        val newBrightness = (currentBrightness + fraction).coerceIn(0f, 1f)
+        layoutParams.screenBrightness = newBrightness
+        window.attributes = layoutParams
+    }
+
+    private fun adjustVolume(fraction: Float) {
+        val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+
+        val change = (fraction * maxVol).toInt()
+        val newVol = (currentVol + change).coerceIn(0, maxVol)
+
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         player?.release()
         player = null
+        super.onDestroy()
     }
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-
-    val screenWidth = resources.displayMetrics.widthPixels
-
-    when (event.action) {
-
-        MotionEvent.ACTION_DOWN -> {
-            initialY = event.y
-            isAdjustingVolume = event.x > screenWidth / 2
-            isAdjustingBrightness = !isAdjustingVolume
-        }
-
-        MotionEvent.ACTION_MOVE -> {
-            val delta = initialY - event.y
-            val fraction = delta / resources.displayMetrics.heightPixels
-
-            if (isAdjustingVolume) {
-                val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-                val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                val newVol = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) + fraction * maxVol).toInt()
-                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol.coerceIn(0, maxVol), 0)
-            }
-
-            if (isAdjustingBrightness) {
-                val layoutParams = window.attributes
-                layoutParams.screenBrightness =
-                    (layoutParams.screenBrightness + fraction).coerceIn(0f, 1f)
-                window.attributes = layoutParams
-            }
-        }
-    }
-    return true
-}
 }
