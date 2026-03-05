@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LREC Player</string>
+    <string name="folders">مجلد</string>
+    <string name="videos">فيديو</string>
+    <string name="no_videos">لا توجد فيديوهات في الجهاز</string>
+    <string name="permission_required">يجب منح إذن الوصول للملفات\nاضغط تحديث للمحاولة مجدداً</string>
+</resources>
