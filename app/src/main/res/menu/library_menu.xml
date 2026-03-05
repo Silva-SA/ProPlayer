@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <group android:checkableBehavior="none">
+        <item
+            android:id="@+id/lib_nav_settings"
+            android:icon="@drawable/ic_settings"
+            android:title="الإعدادات"/>
+        <item
+            android:id="@+id/lib_nav_refresh"
+            android:icon="@drawable/ic_refresh"
+            android:title="تحديث المحتوى"/>
+    </group>
+</menu>
