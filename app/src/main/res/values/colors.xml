@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <color name="primary_color">#6200EE</color>
-    <color name="primary_variant_color">#3700B3</color>
-    <color name="secondary_color">#03DAC5</color>
-    <color name="background_color">#FFFFFF</color>
-
-    <color name="player_control_bg">#66000000</color>
-
-    <!-- Added to prevent future theme errors -->
+    <color name="primary_color">#1A1A2E</color>
+    <color name="primary_variant_color">#16213E</color>
+    <color name="secondary_color">#0F3460</color>
+    <color name="background_color">#000000</color>
+    <color name="player_control_bg">#00000000</color>
     <color name="md_theme_light_onPrimary">#FFFFFF</color>
-
+    <color name="accent_color">#FFFFFF</color>
 </resources>
