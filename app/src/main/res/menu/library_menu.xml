@@ -1,13 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
-    <group android:checkableBehavior="none">
-        <item
-            android:id="@+id/lib_nav_settings"
-            android:icon="@drawable/ic_settings"
-            android:title="الإعدادات"/>
-        <item
-            android:id="@+id/lib_nav_refresh"
-            android:icon="@drawable/ic_refresh"
-            android:title="تحديث المحتوى"/>
-    </group>
+
+    <item
+        android:id="@+id/lib_nav_theme"
+        android:title="تبديل المظهر"
+        android:icon="@drawable/ic_theme"/>
+
+    <item
+        android:id="@+id/lib_nav_language"
+        android:title="تغيير اللغة"
+        android:icon="@drawable/ic_settings"/>
+
+    <item
+        android:id="@+id/lib_nav_hidden"
+        android:title="إظهار الملفات المخفية"
+        android:checkable="true"/>
+
+    <item
+        android:id="@+id/lib_nav_refresh"
+        android:title="تحديث"
+        android:icon="@drawable/ic_refresh"/>
+
+    <item
+        android:id="@+id/lib_nav_settings"
+        android:title="الإعدادات"
+        android:icon="@drawable/ic_settings"/>
+
 </menu>
