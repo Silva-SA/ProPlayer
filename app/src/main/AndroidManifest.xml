@@ -9,38 +9,48 @@
 
     <application
         android:allowBackup="true"
-        android:label="LREC Player"
+        android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.LRECOperator"
         android:supportsRtl="true">
 
-        <!-- شاشة المكتبة هي الشاشة الرئيسية -->
+        <!-- 1. شاشة الترحيب - أولى شاشة تفتح -->
         <activity
-            android:name=".VideoLibraryActivity"
+            android:name=".SplashActivity"
             android:exported="true"
-            android:screenOrientation="portrait">
+            android:screenOrientation="portrait"
+            android:noHistory="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
 
-        <!-- شاشة المشغل -->
+        <!-- 2. مكتبة الفيديو -->
+        <activity
+            android:name=".VideoLibraryActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"/>
+
+        <!-- 3. الإعدادات -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"/>
+
+        <!-- 4. المشغل -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:windowSoftInputMode="adjustNothing">
-
-            <!-- فتح من مدير الملفات مباشرة -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="video/*"/>
             </intent-filter>
-
         </activity>
 
     </application>
