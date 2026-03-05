@@ -26,6 +26,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.google.android.material.navigation.NavigationView
+import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
 
@@ -59,27 +60,33 @@ class MainActivity : AppCompatActivity() {
     private lateinit var brightnessBar:       View
     private lateinit var tvBrightnessPercent: TextView
 
-    private lateinit var gestureDetector: GestureDetector
-    private lateinit var prefs: SharedPreferences
+    private lateinit var prefs:        SharedPreferences
     private lateinit var audioManager: AudioManager
 
     // ─── الحالة ───────────────────────────────────────────────────
-    private var controlsVisible     = true
-    private var isDraggingSeekBar   = false
+    private var controlsVisible      = true
+    private var isDraggingSeekBar    = false
     private var currentPlaybackSpeed = 1.0f
-    private var isLandscape         = true
+    private var isLandscape          = true
 
-    // مدة الإخفاء التلقائي: دقيقتان كاملتان
-    private val HIDE_DELAY_MS = 120_000L
+    // مدة الإخفاء التلقائي: 3 ثوانٍ
+    private val HIDE_DELAY_MS = 3_000L
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val handler      = Handler(Looper.getMainLooper())
     private val hideRunnable = Runnable { hideControls() }
     private var overlayRunnable: Runnable? = null
+
+    // للكشف عن نوع الإيماءة
+    private var gestureStartX = 0f
+    private var gestureStartY = 0f
+    private var gestureType   = GestureType.NONE
+
+    private enum class GestureType { NONE, SEEK, VOLUME, BRIGHTNESS }
 
     // ─── onCreate ─────────────────────────────────────────────────
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = getSharedPreferences("lrec_prefs", MODE_PRIVATE)
+        prefs        = getSharedPreferences("lrec_prefs", MODE_PRIVATE)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
         val isDark = prefs.getBoolean("dark_mode", true)
@@ -87,6 +94,7 @@ class MainActivity : AppCompatActivity() {
             if (isDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
         )
 
+        // وضع ملء الشاشة الكامل
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE        or
@@ -102,7 +110,7 @@ class MainActivity : AppCompatActivity() {
         setupDrawer()
         setupControls()
         setupSeekBar()
-        setupGestures()
+        setupTouchGestures()
         startProgressUpdater()
         handleIntent(intent)
     }
@@ -136,7 +144,7 @@ class MainActivity : AppCompatActivity() {
 
     // ─── تهيئة المشغل ────────────────────────────────────────────
     private fun initPlayer() {
-        player = ExoPlayer.Builder(this).build()
+        player            = ExoPlayer.Builder(this).build()
         playerView.player = player
         playerView.useController = false
 
@@ -163,7 +171,7 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    // ─── القائمة الجانبية للمشغل ──────────────────────────────────
+    // ─── القائمة الجانبية ─────────────────────────────────────────
     private fun setupDrawer() {
         btnPlayerMenu.setOnClickListener {
             drawerLayout.openDrawer(GravityCompat.START)
@@ -173,10 +181,10 @@ class MainActivity : AppCompatActivity() {
         navigationView.setNavigationItemSelectedListener { item ->
             drawerLayout.closeDrawer(GravityCompat.START)
             when (item.itemId) {
-                R.id.nav_speed    -> { showSpeedDialog();  true }
-                R.id.nav_rotate   -> { toggleRotation();   true }
-                R.id.nav_back_lib -> { finish();           true }
-                else -> false
+                R.id.nav_speed    -> { showSpeedDialog(); true }
+                R.id.nav_rotate   -> { toggleRotation();  true }
+                R.id.nav_back_lib -> { finish();          true }
+                else              -> false
             }
         }
     }
@@ -185,7 +193,7 @@ class MainActivity : AppCompatActivity() {
     private fun showSpeedDialog() {
         val labels = arrayOf("0.25×","0.5×","0.75×","1.0× (عادي)","1.25×","1.5×","1.75×","2.0×")
         val values = floatArrayOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
-        val cur = values.indexOfFirst { it == currentPlaybackSpeed }.takeIf { it >= 0 } ?: 3
+        val cur    = values.indexOfFirst { it == currentPlaybackSpeed }.takeIf { it >= 0 } ?: 3
 
         AlertDialog.Builder(this, R.style.DialogTheme)
             .setTitle("سرعة التشغيل")
@@ -209,25 +217,21 @@ class MainActivity : AppCompatActivity() {
 
     // ─── أزرار التحكم ────────────────────────────────────────────
     private fun setupControls() {
-
         btnPlayPause.setOnClickListener {
             pulse(it)
             if (player.isPlaying) player.pause() else player.play()
             resetHideTimer()
         }
-
         btnForward.setOnClickListener {
             pulse(it)
             player.seekTo(player.currentPosition + 10_000L)
             resetHideTimer()
         }
-
         btnRewind.setOnClickListener {
             pulse(it)
             player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
             resetHideTimer()
         }
-
         btnBack.setOnClickListener   { finish() }
         btnRotate.setOnClickListener { pulse(it); toggleRotation(); resetHideTimer() }
     }
@@ -299,86 +303,95 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ─── الإيماءات ───────────────────────────────────────────────
-    // المشكلة الرئيسية كانت هنا: onSingleTapConfirmed بطيء جداً
-    // الحل: استخدام onSingleTapUp للاستجابة الفورية
-    private fun setupGestures() {
-        gestureDetector = GestureDetector(this,
+    // ─── إيماءات اللمس ───────────────────────────────────────────
+    // لمسة واحدة  ← إظهار/إخفاء أزرار التحكم فوراً
+    // ضغطة مزدوجة ← تشغيل/إيقاف
+    // سحب يسار ↕  ← تعديل السطوع
+    // سحب يمين ↕  ← تعديل الصوت
+    private fun setupTouchGestures() {
+
+        val gd = GestureDetector(this,
             object : GestureDetector.SimpleOnGestureListener() {
 
-                // ─ لمسة واحدة سريعة = إظهار/إخفاء فوري ──────────
                 override fun onSingleTapUp(e: MotionEvent): Boolean {
-                    if (player.duration > 0) {
-                        if (controlsVisible) hideControls() else showControls()
-                    }
+                    if (drawerLayout.isDrawerOpen(GravityCompat.START)) return false
+                    if (controlsVisible) hideControls() else showControls()
                     return true
                 }
 
-                // ─ ضغطة مزدوجة = تشغيل/إيقاف ────────────────────
                 override fun onDoubleTap(e: MotionEvent): Boolean {
                     pulse(btnPlayPause)
                     if (player.isPlaying) player.pause() else player.play()
                     resetHideTimer()
                     return true
                 }
-
-                // ─ سحب عمودي = صوت / سطوع ────────────────────────
-                // distanceY في Android:
-                //   موجب (+) = السحب للأعلى على الشاشة (رفع)
-                //   سالب (-) = السحب للأسفل على الشاشة (خفض)
-                override fun onScroll(
-                    e1: MotionEvent?, e2: MotionEvent,
-                    distanceX: Float, distanceY: Float
-                ): Boolean {
-                    if (player.duration <= 0) return false
-
-                    // نتجاهل الحركة الأفقية الكبيرة
-                    if (Math.abs(distanceX) > Math.abs(distanceY) * 1.5f) return false
-
-                    val screenW = resources.displayMetrics.widthPixels
-                    val x = e1?.x ?: 0f
-
-                    // distanceY موجب = المستخدم يسحب للأعلى = يريد رفع القيمة
-                    // نقسم على 400 للحصول على حساسية مناسبة
-                    val delta = distanceY / 400f
-
-                    if (x < screenW / 2f) {
-                        adjustBrightness(delta)   // الجانب الأيسر = سطوع
-                    } else {
-                        adjustVolume(delta)        // الجانب الأيمن = صوت
-                    }
-                    return true
-                }
             })
 
-        // نستخدم setOnTouchListener على playerView مباشرة
         playerView.setOnTouchListener { _, event ->
-            gestureDetector.onTouchEvent(event)
-            // نُعيد false حتى لا نحجب أحداث onClick
-            false
+
+            gd.onTouchEvent(event)
+
+            when (event.actionMasked) {
+
+                MotionEvent.ACTION_DOWN -> {
+                    gestureStartX = event.x
+                    gestureStartY = event.y
+                    gestureType   = GestureType.NONE
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.x - gestureStartX
+                    val dy = event.y - gestureStartY
+
+                    // تحديد نوع الإيماءة عند أول حركة واضحة
+                    if (gestureType == GestureType.NONE) {
+                        val minSwipe = 12f
+                        if (abs(dy) > minSwipe && abs(dy) > abs(dx) * 0.8f) {
+                            val screenW = resources.displayMetrics.widthPixels
+                            gestureType = if (gestureStartX < screenW / 2f)
+                                GestureType.BRIGHTNESS else GestureType.VOLUME
+                        } else if (abs(dx) > minSwipe) {
+                            gestureType = GestureType.SEEK
+                        }
+                    }
+
+                    when (gestureType) {
+                        GestureType.VOLUME -> {
+                            // سحب للأعلى = رفع الصوت (dy سالب عند السحب للأعلى)
+                            applyVolumeDelta(-dy / 600f)
+                            true
+                        }
+                        GestureType.BRIGHTNESS -> {
+                            // سحب للأعلى = رفع السطوع
+                            applyBrightnessDelta(-dy / 600f)
+                            gestureStartY = event.y
+                            true
+                        }
+                        else -> false
+                    }
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    gestureType = GestureType.NONE
+                    false
+                }
+
+                else -> false
+            }
         }
     }
 
     // ─── ضبط الصوت ───────────────────────────────────────────────
-    // الإصلاح: استخدام adjustStreamVolume بدلاً من setStreamVolume
-    // لأن adjustStreamVolume يتعامل مع الخطوات بشكل صحيح
-    private fun adjustVolume(delta: Float) {
-        val maxVol  = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val curVol  = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-
-        // delta موجب = السحب للأعلى = رفع الصوت
-        val change  = (delta * maxVol).toInt()
-        val newVol  = (curVol + change).coerceIn(0, maxVol)
-
-        audioManager.setStreamVolume(
-            AudioManager.STREAM_MUSIC,
-            newVol,
-            0  // بدون صوت تنبيه أو اهتزاز
-        )
-
+    private fun applyVolumeDelta(delta: Float) {
+        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val change = (delta * maxVol.toFloat() * 0.5f).toInt()
+        if (change == 0) return
+        val newVol = (curVol + change).coerceIn(0, maxVol)
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
         val pct = if (maxVol > 0) (newVol * 100 / maxVol) else 0
         showVolumeOverlay(pct)
-        resetHideTimer()
     }
 
     private fun showVolumeOverlay(pct: Int) {
@@ -390,15 +403,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ─── ضبط السطوع ──────────────────────────────────────────────
-    private fun adjustBrightness(delta: Float) {
+    private fun applyBrightnessDelta(delta: Float) {
         val lp = window.attributes
         var b  = if (lp.screenBrightness < 0f) 0.5f else lp.screenBrightness
-        // delta موجب = رفع السطوع
         b = (b + delta).coerceIn(0.01f, 1f)
         lp.screenBrightness = b
         window.attributes   = lp
         showBrightnessOverlay((b * 100).toInt())
-        resetHideTimer()
     }
 
     private fun showBrightnessOverlay(pct: Int) {
@@ -468,11 +479,22 @@ class MainActivity : AppCompatActivity() {
     private val Int.dp get() = (this * resources.displayMetrics.density).toInt()
 
     // ─── دورة الحياة ─────────────────────────────────────────────
-    override fun onPause()  { super.onPause(); player.pause() }
+    override fun onPause() { super.onPause(); player.pause() }
+
     override fun onResume() {
         super.onResume()
+        // إعادة ضبط وضع ملء الشاشة عند العودة
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE        or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN    or
+            View.SYSTEM_UI_FLAG_FULLSCREEN           or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION      or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        )
         if (player.playbackState != Player.STATE_ENDED && player.duration > 0) player.play()
     }
+
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         player.release()
