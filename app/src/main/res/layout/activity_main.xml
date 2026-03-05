@@ -169,7 +169,6 @@
                 android:tint="#FFFFFF"
                 android:padding="12dp"
                 android:contentDescription="القائمة"
-                android:onClick="openMenu"/>
 
         </LinearLayout>
 
