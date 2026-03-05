@@ -1,15 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- أذونات الإنترنت لتشغيل الفيديو عبر الشبكة -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-
-    <!-- أذونات قراءة الملفات المحلية -->
-    <!-- أندرويد 12 وأقل -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
-    <!-- أندرويد 13+ -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
 
     <application
@@ -20,19 +15,26 @@
         android:theme="@style/Theme.LRECOperator"
         android:supportsRtl="true">
 
+        <!-- شاشة المكتبة هي الشاشة الرئيسية -->
         <activity
-            android:name=".MainActivity"
+            android:name=".VideoLibraryActivity"
             android:exported="true"
-            android:screenOrientation="sensor"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:windowSoftInputMode="adjustNothing">
-
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+        </activity>
 
-            <!-- دعم فتح ملفات الفيديو مباشرة من مدير الملفات -->
+        <!-- شاشة المشغل -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustNothing">
+
+            <!-- فتح من مدير الملفات مباشرة -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
