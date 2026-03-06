@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -63,6 +64,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs:        SharedPreferences
     private lateinit var audioManager: AudioManager
 
+    // ─── تضخيم الصوت ─────────────────────────────────────────────
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var currentBoostLevel = 0   // 0 = معطّل، القيم بالـ mB (milli-Bel)
+
     // ─── الحالة ───────────────────────────────────────────────────
     private var controlsVisible      = true
     private var isDraggingSeekBar    = false
@@ -89,12 +94,14 @@ class MainActivity : AppCompatActivity() {
         prefs        = getSharedPreferences("lrec_prefs", MODE_PRIVATE)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
+        // استعادة مستوى التضخيم المحفوظ
+        currentBoostLevel = prefs.getInt("boost_level", 0)
+
         val isDark = prefs.getBoolean("dark_mode", true)
         AppCompatDelegate.setDefaultNightMode(
             if (isDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
         )
 
-        // وضع ملء الشاشة الكامل
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE        or
@@ -167,8 +174,90 @@ class MainActivity : AppCompatActivity() {
                     btnPlayPause.setImageResource(R.drawable.ic_play)
                     showControls()
                 }
+                // ── تفعيل LoudnessEnhancer بعد اكتمال تجهيز المشغل ──
+                if (state == Player.STATE_READY) {
+                    initLoudnessEnhancer()
+                }
             }
         })
+    }
+
+    // ─── تهيئة تضخيم الصوت ───────────────────────────────────────
+    private fun initLoudnessEnhancer() {
+        try {
+            // تحرير أي نسخة سابقة
+            loudnessEnhancer?.release()
+            loudnessEnhancer = null
+
+            val audioSessionId = player.audioSessionId
+            if (audioSessionId == 0) return   // الجلسة غير جاهزة بعد
+
+            loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                if (currentBoostLevel > 0) {
+                    // setTargetGain تأخذ القيمة بالـ mB
+                    // 1 Bel = 1000 mB، وضعف الصوت ≈ 1000 mB
+                    setTargetGain(currentBoostLevel)
+                    enabled = true
+                } else {
+                    enabled = false
+                }
+            }
+        } catch (e: Exception) {
+            // بعض الأجهزة لا تدعم LoudnessEnhancer — نتجاهل الخطأ بصمت
+            loudnessEnhancer = null
+        }
+    }
+
+    // ─── تطبيق مستوى التضخيم ─────────────────────────────────────
+    private fun applyBoostLevel(levelMb: Int) {
+        currentBoostLevel = levelMb
+        prefs.edit().putInt("boost_level", levelMb).apply()
+
+        try {
+            val enhancer = loudnessEnhancer
+            if (enhancer == null) {
+                // لم يُهيَّأ بعد — سيُطبَّق عند STATE_READY
+                return
+            }
+            if (levelMb > 0) {
+                enhancer.setTargetGain(levelMb)
+                enhancer.enabled = true
+            } else {
+                enhancer.enabled = false
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "جهازك لا يدعم تضخيم الصوت", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ─── حوار تضخيم الصوت ────────────────────────────────────────
+    private fun showBoostDialog() {
+        // الخيارات: معطّل، 25%، 50%، 75%، ضعف كامل (100%)
+        // ضعف الصوت الكامل = 1000 mB (زيادة 10 ديسيبل تقريباً)
+        val labels = arrayOf(
+            "معطّل  (0%)",
+            "تضخيم خفيف  (25%)",
+            "تضخيم متوسط  (50%)",
+            "تضخيم قوي  (75%)",
+            "ضعف كامل  (100%)"
+        )
+        val values = intArrayOf(0, 250, 500, 750, 1000)
+
+        // تحديد الخيار الحالي
+        val currentIndex = values.indexOfFirst { it == currentBoostLevel }
+            .takeIf { it >= 0 } ?: 0
+
+        AlertDialog.Builder(this, R.style.DialogTheme)
+            .setTitle("تضخيم الصوت")
+            .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
+                applyBoostLevel(values[which])
+                dialog.dismiss()
+                val msg = if (values[which] == 0) "تم إيقاف تضخيم الصوت"
+                          else "تم ضبط التضخيم: ${labels[which]}"
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("إلغاء", null)
+            .show()
     }
 
     // ─── القائمة الجانبية ─────────────────────────────────────────
@@ -182,6 +271,7 @@ class MainActivity : AppCompatActivity() {
             drawerLayout.closeDrawer(GravityCompat.START)
             when (item.itemId) {
                 R.id.nav_speed    -> { showSpeedDialog(); true }
+                R.id.nav_boost    -> { showBoostDialog(); true }
                 R.id.nav_rotate   -> { toggleRotation();  true }
                 R.id.nav_back_lib -> { finish();          true }
                 else              -> false
@@ -304,10 +394,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ─── إيماءات اللمس ───────────────────────────────────────────
-    // لمسة واحدة  ← إظهار/إخفاء أزرار التحكم فوراً
-    // ضغطة مزدوجة ← تشغيل/إيقاف
-    // سحب يسار ↕  ← تعديل السطوع
-    // سحب يمين ↕  ← تعديل الصوت
     private fun setupTouchGestures() {
 
         val gd = GestureDetector(this,
@@ -344,7 +430,6 @@ class MainActivity : AppCompatActivity() {
                     val dx = event.x - gestureStartX
                     val dy = event.y - gestureStartY
 
-                    // تحديد نوع الإيماءة عند أول حركة واضحة
                     if (gestureType == GestureType.NONE) {
                         val minSwipe = 12f
                         if (abs(dy) > minSwipe && abs(dy) > abs(dx) * 0.8f) {
@@ -358,12 +443,10 @@ class MainActivity : AppCompatActivity() {
 
                     when (gestureType) {
                         GestureType.VOLUME -> {
-                            // سحب للأعلى = رفع الصوت (dy سالب عند السحب للأعلى)
                             applyVolumeDelta(-dy / 600f)
                             true
                         }
                         GestureType.BRIGHTNESS -> {
-                            // سحب للأعلى = رفع السطوع
                             applyBrightnessDelta(-dy / 600f)
                             gestureStartY = event.y
                             true
@@ -483,7 +566,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // إعادة ضبط وضع ملء الشاشة عند العودة
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE        or
@@ -497,6 +579,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        // ── تحرير LoudnessEnhancer عند إغلاق المشغل ──────────────
+        try { loudnessEnhancer?.release() } catch (e: Exception) { }
+        loudnessEnhancer = null
         player.release()
         super.onDestroy()
     }
