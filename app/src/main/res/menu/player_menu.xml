@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <group android:checkableBehavior="none">
-        <item android:id="@+id/nav_speed"    android:icon="@drawable/ic_speed"       android:title="سرعة التشغيل"/>
-        <item android:id="@+id/nav_rotate"   android:icon="@drawable/ic_rotate"      android:title="تدوير الشاشة"/>
-        <item android:id="@+id/nav_back_lib" android:icon="@drawable/ic_arrow_back"  android:title="العودة للمكتبة"/>
+        <item android:id="@+id/nav_speed"    android:icon="@drawable/ic_speed"       android:title="@string/playback_speed"/>
+        <item android:id="@+id/nav_boost"    android:icon="@drawable/ic_volume"      android:title="@string/volume_boost"/>
+        <item android:id="@+id/nav_clarity"  android:icon="@drawable/ic_volume"      android:title="@string/audio_clarity"/>
+        <item android:id="@+id/nav_rotate"   android:icon="@drawable/ic_rotate"      android:title="@string/rotate_screen"/>
+        <item android:id="@+id/nav_back_lib" android:icon="@drawable/ic_arrow_back"  android:title="@string/back_to_library"/>
     </group>
 </menu>
