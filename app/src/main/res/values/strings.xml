@@ -1,8 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LREC Player</string>
+
+    <!-- شريط العنوان -->
     <string name="folders">مجلد</string>
     <string name="videos">فيديو</string>
+
+    <!-- رسائل -->
     <string name="no_videos">لا توجد فيديوهات في الجهاز</string>
     <string name="permission_required">يجب منح إذن الوصول للملفات\nاضغط تحديث للمحاولة مجدداً</string>
+
+    <!-- القائمة الجانبية للمكتبة -->
+    <string name="settings">الإعدادات</string>
+    <string name="refresh">تحديث</string>
+
+    <!-- حوار الإعدادات -->
+    <string name="settings_title">الإعدادات</string>
+    <string name="toggle_theme">تبديل المظهر</string>
+    <string name="change_language">تغيير اللغة</string>
+    <string name="show_hidden_files">إظهار الملفات المخفية</string>
+    <string name="close">إغلاق</string>
+
+    <!-- رسائل Toast -->
+    <string name="hidden_shown">سيتم عرض الملفات المخفية</string>
+    <string name="hidden_hidden">لن تُعرض الملفات المخفية</string>
+    <string name="theme_dark">تم التبديل إلى الوضع الليلي</string>
+    <string name="theme_light">تم التبديل إلى الوضع النهاري</string>
+    <string name="lang_changed">تم تغيير اللغة</string>
+
+    <!-- قائمة المشغل -->
+    <string name="playback_speed">سرعة التشغيل</string>
+    <string name="volume_boost">تضخيم الصوت</string>
+    <string name="audio_clarity">توضيح الصوت ✨</string>
+    <string name="rotate_screen">تدوير الشاشة</string>
+    <string name="back_to_library">العودة للمكتبة</string>
 </resources>
