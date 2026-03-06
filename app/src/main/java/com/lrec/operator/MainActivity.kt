@@ -4,7 +4,10 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
+import android.media.audiofx.BassBoost
+import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
+import android.media.audiofx.Virtualizer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -64,9 +67,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs:        SharedPreferences
     private lateinit var audioManager: AudioManager
 
-    // ─── تضخيم الصوت ─────────────────────────────────────────────
+    // ─── مؤثرات الصوت ────────────────────────────────────────────
+
+    // [ 1 ] تضخيم الصوت
     private var loudnessEnhancer: LoudnessEnhancer? = null
-    private var currentBoostLevel = 0   // 0 = معطّل، القيم بالـ mB (milli-Bel)
+    private var currentBoostLevel = 0       // 0=معطّل | 250/500/750/1000 mB
+
+    // [ 2 ] توضيح الصوت — ثلاثة مؤثرات مدمجة تعمل معاً بدون إنترنت
+    private var equalizer:      Equalizer?   = null  // يُبرز ترددات الكلام والحوار
+    private var bassBoost:      BassBoost?   = null  // يُقلّل التشويش في الأصوات العميقة
+    private var virtualizer:    Virtualizer? = null  // يُعطي عمقاً وإحساساً بالوضوح
+    private var clarityEnabled  = false
 
     // ─── الحالة ───────────────────────────────────────────────────
     private var controlsVisible      = true
@@ -74,14 +85,12 @@ class MainActivity : AppCompatActivity() {
     private var currentPlaybackSpeed = 1.0f
     private var isLandscape          = true
 
-    // مدة الإخفاء التلقائي: 3 ثوانٍ
     private val HIDE_DELAY_MS = 3_000L
 
     private val handler      = Handler(Looper.getMainLooper())
     private val hideRunnable = Runnable { hideControls() }
     private var overlayRunnable: Runnable? = null
 
-    // للكشف عن نوع الإيماءة
     private var gestureStartX = 0f
     private var gestureStartY = 0f
     private var gestureType   = GestureType.NONE
@@ -94,8 +103,9 @@ class MainActivity : AppCompatActivity() {
         prefs        = getSharedPreferences("lrec_prefs", MODE_PRIVATE)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
-        // استعادة مستوى التضخيم المحفوظ
+        // استعادة الإعدادات المحفوظة
         currentBoostLevel = prefs.getInt("boost_level", 0)
+        clarityEnabled    = prefs.getBoolean("clarity_enabled", false)
 
         val isDark = prefs.getBoolean("dark_mode", true)
         AppCompatDelegate.setDefaultNightMode(
@@ -174,28 +184,27 @@ class MainActivity : AppCompatActivity() {
                     btnPlayPause.setImageResource(R.drawable.ic_play)
                     showControls()
                 }
-                // ── تفعيل LoudnessEnhancer بعد اكتمال تجهيز المشغل ──
+                // ── تفعيل جميع المؤثرات بعد اكتمال تجهيز المشغل ────
                 if (state == Player.STATE_READY) {
-                    initLoudnessEnhancer()
+                    initAudioEffects()
                 }
             }
         })
     }
 
-    // ─── تهيئة تضخيم الصوت ───────────────────────────────────────
-    private fun initLoudnessEnhancer() {
+    // ══════════════════════════════════════════════════════════════
+    //  تهيئة جميع مؤثرات الصوت دفعة واحدة
+    //  يُستدعى عند STATE_READY لضمان وجود audioSessionId صالح
+    // ══════════════════════════════════════════════════════════════
+    private fun initAudioEffects() {
+        val sessionId = player.audioSessionId
+        if (sessionId == 0) return
+
+        // ── [ 1 ] تضخيم الصوت LoudnessEnhancer ───────────────────
         try {
-            // تحرير أي نسخة سابقة
             loudnessEnhancer?.release()
-            loudnessEnhancer = null
-
-            val audioSessionId = player.audioSessionId
-            if (audioSessionId == 0) return   // الجلسة غير جاهزة بعد
-
-            loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+            loudnessEnhancer = LoudnessEnhancer(sessionId).apply {
                 if (currentBoostLevel > 0) {
-                    // setTargetGain تأخذ القيمة بالـ mB
-                    // 1 Bel = 1000 mB، وضعف الصوت ≈ 1000 mB
                     setTargetGain(currentBoostLevel)
                     enabled = true
                 } else {
@@ -203,22 +212,68 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } catch (e: Exception) {
-            // بعض الأجهزة لا تدعم LoudnessEnhancer — نتجاهل الخطأ بصمت
             loudnessEnhancer = null
+        }
+
+        // ── [ 2 ] توضيح الصوت — Equalizer + BassBoost + Virtualizer
+        try {
+            equalizer?.release()
+            bassBoost?.release()
+            virtualizer?.release()
+
+            // Equalizer: يُبرز نطاق الكلام (1kHz–4kHz) ويُخفّف الضجيج الطرفي
+            equalizer = Equalizer(0, sessionId).apply {
+                val bands = numberOfBands.toInt()
+                for (i in 0 until bands) {
+                    val level: Short = when (i) {
+                        0    -> (-300).toShort()  // ~60Hz   خفض للضجيج العميق
+                        1    -> (-150).toShort()  // ~230Hz  خفض للطنين المنخفض
+                        2    -> ( 400).toShort()  // ~910Hz  رفع لوضوح الكلام
+                        3    -> ( 600).toShort()  // ~3.6kHz رفع قوي لحروف الكلام
+                        4    -> ( 200).toShort()  // ~14kHz  رفع خفيف للتفاصيل
+                        else -> 0.toShort()
+                    }
+                    setBandLevel(i.toShort(), level)
+                }
+                enabled = clarityEnabled
+            }
+
+            // BassBoost: يُقلّل التشوّه في الترددات المنخفضة
+            bassBoost = BassBoost(0, sessionId).apply {
+                setStrength(300)         // 300 / 1000 = تقليل معتدل للـ bass
+                enabled = clarityEnabled
+            }
+
+            // Virtualizer: يُعطي إحساساً بالعمق والاتجاه يجعل الصوت أوضح
+            virtualizer = Virtualizer(0, sessionId).apply {
+                setStrength(600)         // 600 / 1000 = تأثير متوسط مريح
+                enabled = clarityEnabled
+            }
+
+        } catch (e: Exception) {
+            equalizer   = null
+            bassBoost   = null
+            virtualizer = null
         }
     }
 
-    // ─── تطبيق مستوى التضخيم ─────────────────────────────────────
+    // ── تبديل حالة توضيح الصوت (تشغيل ↔ إيقاف) ─────────────────
+    private fun applyClarityState(enable: Boolean) {
+        clarityEnabled = enable
+        prefs.edit().putBoolean("clarity_enabled", enable).apply()
+        try {
+            equalizer?.enabled   = enable
+            bassBoost?.enabled   = enable
+            virtualizer?.enabled = enable
+        } catch (e: Exception) { /* تجاهل — الجهاز لا يدعمها */ }
+    }
+
+    // ── تطبيق مستوى تضخيم الصوت ─────────────────────────────────
     private fun applyBoostLevel(levelMb: Int) {
         currentBoostLevel = levelMb
         prefs.edit().putInt("boost_level", levelMb).apply()
-
         try {
-            val enhancer = loudnessEnhancer
-            if (enhancer == null) {
-                // لم يُهيَّأ بعد — سيُطبَّق عند STATE_READY
-                return
-            }
+            val enhancer = loudnessEnhancer ?: return
             if (levelMb > 0) {
                 enhancer.setTargetGain(levelMb)
                 enhancer.enabled = true
@@ -232,8 +287,6 @@ class MainActivity : AppCompatActivity() {
 
     // ─── حوار تضخيم الصوت ────────────────────────────────────────
     private fun showBoostDialog() {
-        // الخيارات: معطّل، 25%، 50%، 75%، ضعف كامل (100%)
-        // ضعف الصوت الكامل = 1000 mB (زيادة 10 ديسيبل تقريباً)
         val labels = arrayOf(
             "معطّل  (0%)",
             "تضخيم خفيف  (25%)",
@@ -242,13 +295,11 @@ class MainActivity : AppCompatActivity() {
             "ضعف كامل  (100%)"
         )
         val values = intArrayOf(0, 250, 500, 750, 1000)
-
-        // تحديد الخيار الحالي
         val currentIndex = values.indexOfFirst { it == currentBoostLevel }
             .takeIf { it >= 0 } ?: 0
 
         AlertDialog.Builder(this, R.style.DialogTheme)
-            .setTitle("تضخيم الصوت")
+            .setTitle("🔊  تضخيم الصوت")
             .setSingleChoiceItems(labels, currentIndex) { dialog, which ->
                 applyBoostLevel(values[which])
                 dialog.dismiss()
@@ -257,6 +308,58 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("إلغاء", null)
+            .show()
+    }
+
+    // ─── حوار توضيح الصوت ────────────────────────────────────────
+    private fun showClarityDialog() {
+        val statusNow = if (clarityEnabled) "✅ مُفعَّلة الآن" else "⭕ معطّلة الآن"
+        val btnLabel  = if (clarityEnabled) "إيقاف التوضيح" else "تفعيل التوضيح"
+
+        val description = """
+✨ توضيح الصوت
+
+تعمل هذه الخاصية على إبراز وضوح الحوار والكلام
+عبر ثلاثة مؤثرات صوتية مدمجة تعمل بدون إنترنت:
+
+🎚 Equalizer
+يُبرز ترددات الكلام ويُخفّف ضجيج الخلفية
+
+🔉 BassBoost
+يُقلّل التشوّه في الأصوات العميقة
+
+🎧 Virtualizer
+يُعطي عمقاً وإحساساً بالوضوح والاتجاه
+
+─────────────────────────────
+⚠️  تنبيه مهم
+
+إذا لاحظت أثناء التشغيل أيًّا مما يلي:
+  • تقطّع في الصوت أو الصورة
+  • بطء في استجابة الجهاز
+  • ارتفاع ملحوظ في حرارة الهاتف
+
+فهذا يعني أن معالج جهازك يعمل بطاقة عالية.
+يُنصح في هذه الحالة بإيقاف الخاصية
+والعودة للتشغيل الطبيعي.
+─────────────────────────────
+الحالة الحالية:  $statusNow
+        """.trimIndent()
+
+        AlertDialog.Builder(this, R.style.DialogTheme)
+            .setTitle("توضيح الصوت  ✨")
+            .setMessage(description)
+            .setPositiveButton(btnLabel) { _, _ ->
+                val newState = !clarityEnabled
+                applyClarityState(newState)
+                Toast.makeText(
+                    this,
+                    if (newState) "✅ تم تفعيل توضيح الصوت"
+                    else          "⭕ تم إيقاف توضيح الصوت",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .setNegativeButton("إغلاق", null)
             .show()
     }
 
@@ -270,10 +373,11 @@ class MainActivity : AppCompatActivity() {
         navigationView.setNavigationItemSelectedListener { item ->
             drawerLayout.closeDrawer(GravityCompat.START)
             when (item.itemId) {
-                R.id.nav_speed    -> { showSpeedDialog(); true }
-                R.id.nav_boost    -> { showBoostDialog(); true }
-                R.id.nav_rotate   -> { toggleRotation();  true }
-                R.id.nav_back_lib -> { finish();          true }
+                R.id.nav_speed    -> { showSpeedDialog();   true }
+                R.id.nav_boost    -> { showBoostDialog();   true }
+                R.id.nav_clarity  -> { showClarityDialog(); true }
+                R.id.nav_rotate   -> { toggleRotation();    true }
+                R.id.nav_back_lib -> { finish();            true }
                 else              -> false
             }
         }
@@ -414,9 +518,7 @@ class MainActivity : AppCompatActivity() {
             })
 
         playerView.setOnTouchListener { _, event ->
-
             gd.onTouchEvent(event)
-
             when (event.actionMasked) {
 
                 MotionEvent.ACTION_DOWN -> {
@@ -579,9 +681,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        // ── تحرير LoudnessEnhancer عند إغلاق المشغل ──────────────
+        // ── تحرير جميع مؤثرات الصوت عند إغلاق المشغل ────────────
         try { loudnessEnhancer?.release() } catch (e: Exception) { }
+        try { equalizer?.release()        } catch (e: Exception) { }
+        try { bassBoost?.release()        } catch (e: Exception) { }
+        try { virtualizer?.release()      } catch (e: Exception) { }
         loudnessEnhancer = null
+        equalizer        = null
+        bassBoost        = null
+        virtualizer      = null
         player.release()
         super.onDestroy()
     }
