@@ -2,15 +2,23 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
-        android:id="@+id/nav_pick"
-        android:title="اختيار فيديو" />
-
-    <item
         android:id="@+id/nav_speed"
-        android:title="سرعة التشغيل" />
+        android:title="سرعة التشغيل"
+        android:icon="@drawable/ic_speed"/>
 
     <item
-        android:id="@+id/nav_theme"
-        android:title="تبديل المظهر" />
+        android:id="@+id/nav_boost"
+        android:title="تضخيم الصوت"
+        android:icon="@drawable/ic_volume"/>
+
+    <item
+        android:id="@+id/nav_rotate"
+        android:title="تدوير الشاشة"
+        android:icon="@drawable/ic_rotate"/>
+
+    <item
+        android:id="@+id/nav_back_lib"
+        android:title="العودة للمكتبة"
+        android:icon="@drawable/ic_arrow_back"/>
 
 </menu>
