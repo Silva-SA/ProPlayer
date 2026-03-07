@@ -89,10 +89,6 @@ class VideoLibraryActivity : AppCompatActivity() {
 
         applyTheme()
 
-        // ✅ الإصلاح: حُذفت علامة LAYOUT_FULLSCREEN التي كانت تجعل
-        //    المحتوى يرسم خلف شريط الحالة مسبّبةً التداخل مع الساعة
-        //    والبطارية. هذه الشاشة مكتبة عادية ولا تحتاج وضع fullscreen.
-
         setContentView(R.layout.activity_library)
         initViews()
         setupDrawer()
@@ -132,20 +128,17 @@ class VideoLibraryActivity : AppCompatActivity() {
     private fun setupDrawer() {
         navigationView.setNavigationItemSelectedListener { item ->
             when (item.itemId) {
-
                 R.id.lib_nav_settings -> {
                     drawerLayout.closeDrawer(GravityCompat.START)
                     showSettingsDialog()
                     true
                 }
-
                 R.id.lib_nav_refresh -> {
                     drawerLayout.closeDrawer(GravityCompat.START)
                     btnRefreshTop.animate().rotationBy(360f).setDuration(500).start()
                     checkPermissionAndLoad()
                     true
                 }
-
                 else -> false
             }
         }
@@ -155,10 +148,16 @@ class VideoLibraryActivity : AppCompatActivity() {
     private fun showSettingsDialog() {
         val isDark = prefs.getBoolean("dark_mode", true)
 
+        // ✅ إصلاح المشكلة 2: النص يعكس الحالة الحالية لـ showHidden
+        //    إذا كانت الملفات المخفية ظاهرة حالياً → نعرض "إخفاء"
+        //    إذا كانت مخفية حالياً              → نعرض "إظهار"
         val options = arrayOf(
             getString(R.string.toggle_theme),
             getString(R.string.change_language),
-            getString(R.string.show_hidden_files)
+            getString(
+                if (showHidden) R.string.hide_hidden_files
+                else            R.string.show_hidden_files
+            )
         )
 
         AlertDialog.Builder(this)
@@ -250,6 +249,7 @@ class VideoLibraryActivity : AppCompatActivity() {
 
     private fun queryVideos(): List<VideoItem> {
         val list = mutableListOf<VideoItem>()
+
         val projection = arrayOf(
             MediaStore.Video.Media._ID,
             MediaStore.Video.Media.TITLE,
@@ -259,9 +259,33 @@ class VideoLibraryActivity : AppCompatActivity() {
             MediaStore.Video.Media.BUCKET_DISPLAY_NAME
         )
 
+        // ✅ إصلاح المشكلة 1:
+        //
+        // على Android 10+ (API 29+) يُضيف MediaStore عمود IS_HIDDEN ويُخفي
+        // الملفات المبدوءة بنقطة من نتائج الاستعلام الافتراضي تماماً،
+        // لذلك يجب أن نُضيف شرط IS_HIDDEN IN (0,1) عند الاستعلام حتى
+        // تُعاد هذه الملفات للـ cursor أصلاً.
+        //
+        // على Android 9 وما دون: MediaStore يُعيد الملفات المخفية بشكل
+        // طبيعي ونرشّحها يدوياً بدالة isHiddenPath.
+
+        val selection: String? = when {
+            showHidden && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
+                // أعد كل شيء: المخفي وغير المخفي معاً
+                "${MediaStore.MediaColumns.IS_HIDDEN} IN (0, 1)"
+            !showHidden && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
+                // أعد غير المخفي فقط (هذا هو السلوك الافتراضي لكن نصرّح به صراحةً)
+                "${MediaStore.MediaColumns.IS_HIDDEN} = 0"
+            else ->
+                // Android 9 وما دون: لا يوجد IS_HIDDEN، نتركه null ونُصفّي يدوياً
+                null
+        }
+
         val cursor: Cursor? = contentResolver.query(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            projection, null, null,
+            projection,
+            selection,
+            null,
             "${MediaStore.Video.Media.DATE_ADDED} DESC"
         )
 
@@ -284,7 +308,10 @@ class VideoLibraryActivity : AppCompatActivity() {
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id.toString()
                 )
 
-                if (isHiddenPath(data) && !showHidden) continue
+                // للإصدارات الأقدم من Android 10: نُصفّي يدوياً بالمسار
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    if (isHiddenPath(data) && !showHidden) continue
+                }
 
                 list.add(VideoItem(id, title, duration, size, uri, bucket, data))
             }
@@ -292,6 +319,7 @@ class VideoLibraryActivity : AppCompatActivity() {
         return list
     }
 
+    // يكشف الملفات المخفية للإصدارات الأقدم من Android 10
     private fun isHiddenPath(filePath: String): Boolean {
         if (filePath.isBlank()) return false
         return filePath.split("/").any { segment ->
