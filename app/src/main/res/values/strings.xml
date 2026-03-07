@@ -18,7 +18,9 @@
     <string name="settings_title">الإعدادات</string>
     <string name="toggle_theme">تبديل المظهر</string>
     <string name="change_language">تغيير اللغة</string>
+    <!-- ✅ نصّان منفصلان لحالتَي الإظهار والإخفاء -->
     <string name="show_hidden_files">إظهار الملفات المخفية</string>
+    <string name="hide_hidden_files">إخفاء الملفات المخفية</string>
     <string name="close">إغلاق</string>
 
     <!-- رسائل Toast -->
