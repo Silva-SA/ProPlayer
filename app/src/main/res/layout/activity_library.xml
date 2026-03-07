@@ -7,123 +7,141 @@
     android:layout_height="match_parent">
 
     <!-- المحتوى الرئيسي -->
-    <LinearLayout
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
         android:background="@color/lib_bg">
 
-        <!-- ─── شريط العنوان ───────────────────────────────────── -->
+        <!-- ─── الهيكل الرئيسي عمودي ─────────────────────────── -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="60dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="4dp"
-            android:paddingEnd="8dp"
-            android:background="@color/lib_toolbar"
-            android:elevation="4dp">
+            android:layout_height="match_parent"
+            android:orientation="vertical">
 
-            <!-- زر الرجوع (يظهر عند فتح مجلد) -->
-            <ImageButton
-                android:id="@+id/btnBackLib"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:src="@drawable/ic_arrow_back"
-                android:background="@drawable/btn_icon_ripple"
-                android:tint="@color/lib_text_primary"
-                android:padding="12dp"
-                android:visibility="gone"
-                android:contentDescription="رجوع"/>
-
-            <!--
-                ✅ الإصلاح: وضع العنوان والعداد في عمود عمودي داخل
-                   LinearLayout بوزن=1 بدلاً من وضعهما بالتوازي
-                   → يمنع تداخلهما بغض النظر عن لغة النص أو طوله
-            -->
+            <!-- ─── شريط العنوان ──────────────────────────────── -->
             <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:paddingStart="12dp"
-                android:gravity="center_vertical">
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="4dp"
+                android:paddingEnd="8dp"
+                android:background="@color/lib_toolbar"
+                android:elevation="4dp">
 
-                <TextView
-                    android:id="@+id/tvScreenTitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="LREC Player"
-                    android:textColor="@color/lib_text_primary"
-                    android:textSize="16sp"
-                    android:fontFamily="sans-serif-medium"
-                    android:ellipsize="end"
-                    android:maxLines="1"
-                    android:singleLine="true"/>
+                <!-- زر الرجوع (يظهر عند فتح مجلد) -->
+                <ImageButton
+                    android:id="@+id/btnBackLib"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:src="@drawable/ic_arrow_back"
+                    android:background="@drawable/btn_icon_ripple"
+                    android:tint="@color/lib_text_primary"
+                    android:padding="12dp"
+                    android:visibility="gone"
+                    android:contentDescription="رجوع"/>
 
-                <TextView
-                    android:id="@+id/tvVideoCount"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:textColor="@color/lib_text_secondary"
-                    android:textSize="11sp"/>
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:paddingStart="12dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/tvScreenTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="LREC Player"
+                        android:textColor="@color/lib_text_primary"
+                        android:textSize="16sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:singleLine="true"/>
+
+                    <TextView
+                        android:id="@+id/tvVideoCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/lib_text_secondary"
+                        android:textSize="11sp"/>
+
+                </LinearLayout>
+
+                <!-- زر تحديث -->
+                <ImageButton
+                    android:id="@+id/btnRefresh"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@drawable/ic_refresh"
+                    android:background="@drawable/btn_icon_ripple"
+                    android:tint="@color/lib_text_primary"
+                    android:padding="10dp"
+                    android:contentDescription="تحديث"/>
+
+                <!-- زر القائمة -->
+                <ImageButton
+                    android:id="@+id/btnMenuTop"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:src="@drawable/ic_menu"
+                    android:background="@drawable/btn_icon_ripple"
+                    android:tint="@color/lib_text_primary"
+                    android:padding="10dp"
+                    android:contentDescription="القائمة"/>
 
             </LinearLayout>
 
-            <!-- زر تحديث -->
-            <ImageButton
-                android:id="@+id/btnRefresh"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:src="@drawable/ic_refresh"
-                android:background="@drawable/btn_icon_ripple"
-                android:tint="@color/lib_text_primary"
-                android:padding="10dp"
-                android:contentDescription="تحديث"/>
+            <!-- مؤشر التحميل -->
+            <ProgressBar
+                android:id="@+id/progressBar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="80dp"
+                android:visibility="gone"/>
 
-            <!-- زر القائمة -->
-            <ImageButton
-                android:id="@+id/btnMenuTop"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:src="@drawable/ic_menu"
-                android:background="@drawable/btn_icon_ripple"
-                android:tint="@color/lib_text_primary"
-                android:padding="10dp"
-                android:contentDescription="القائمة"/>
+            <!-- رسالة فارغة -->
+            <TextView
+                android:id="@+id/tvEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:padding="48dp"
+                android:textSize="15sp"
+                android:textColor="@color/lib_text_secondary"
+                android:visibility="gone"/>
+
+            <!-- القائمة -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp"
+                android:clipToPadding="false"
+                android:visibility="gone"/>
 
         </LinearLayout>
 
-        <!-- مؤشر التحميل -->
-        <ProgressBar
-            android:id="@+id/progressBar"
+        <!-- ════════════════════════════════════════════════════ -->
+        <!--  ✅ زر فتح محاضرة .lrec — يظهر دائماً أسفل اليمين  -->
+        <!-- ════════════════════════════════════════════════════ -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fabOpenLrec"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="80dp"
-            android:visibility="gone"/>
+            android:layout_gravity="bottom|end"
+            android:layout_margin="20dp"
+            android:src="@drawable/ic_play"
+            android:tint="#FFFFFF"
+            android:contentDescription="فتح محاضرة LREC"
+            app:backgroundTint="#1976D2"
+            app:fabSize="normal"
+            app:elevation="6dp"/>
 
-        <!-- رسالة فارغة -->
-        <TextView
-            android:id="@+id/tvEmpty"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:padding="48dp"
-            android:textSize="15sp"
-            android:textColor="@color/lib_text_secondary"
-            android:visibility="gone"/>
-
-        <!-- القائمة -->
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:padding="8dp"
-            android:clipToPadding="false"
-            android:visibility="gone"/>
-
-    </LinearLayout>
+    </FrameLayout>
 
     <!-- القائمة الجانبية للمكتبة -->
     <com.google.android.material.navigation.NavigationView
