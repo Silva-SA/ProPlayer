@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ملفات داخل التطبيق (filesDir) -->
+    <files-path
+        name="internal_files"
+        path="." />
+
+    <!-- ملفات الكاش -->
+    <cache-path
+        name="cache_files"
+        path="." />
+
+    <!-- ملفات التخزين الخارجي الخاص بالتطبيق -->
+    <external-files-path
+        name="external_files"
+        path="." />
+
+    <!-- أي مسار خارجي (Android 4 / API 19+) -->
+    <external-path
+        name="external_storage"
+        path="." />
+
+</paths>
