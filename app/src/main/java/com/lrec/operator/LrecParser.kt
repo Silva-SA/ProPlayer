@@ -8,38 +8,54 @@ import java.util.zip.DataFormatException
 import java.util.zip.Inflater
 
 /**
- * ══════════════════════════════════════════════════════════════════
- *  LrecParser — محلّل ملفات .lrec  (النسخة المُصحَّحة)
+ * ══════════════════════════════════════════════════════════════════════
+ *  LrecParser — محلّل ملفات .lrec  (النسخة المُحقَّقة بالتحليل الكامل)
  *
  *  الصيغة: Inter-Tel Collaboration Client 2.0 (Build 4.2.7.0)
- *  الشركة: Linktivity / Inter-Tel Delaware Inc. © 2007
+ *  © 2007 Linktivity / Inter-Tel Delaware Inc.
  *
- *  ┌─────────────────────────────────────────────────────────────┐
- *  │  بنية الملف المُكتشَفة بالتحليل العكسي:                    │
- *  │  • 8 bytes : رأس الملف (أصفار)                              │
- *  │  • كتل متكررة:                                              │
- *  │      marker[0] = 0x10                                        │
- *  │      marker[1] = 0x04                                        │
- *  │      length[2] = little-endian U16                           │
- *  │      data[length bytes]                                      │
- *  ├─────────────────────────────────────────────────────────────┤
- *  │  أنواع الكتل (byte[1] من البيانات):                         │
- *  │  0x08 = رأس الملف / Metadata                                │
- *  │  0x03 = إطارات الشاشة — مضغوطة بـ zlib من offset 12       │
- *  │  0x02 = حزم TCP مشفرة (بيانات شبكة)                        │
- *  │  0x01 = بيانات وصفية إضافية                                 │
- *  ├─────────────────────────────────────────────────────────────┤
- *  │  بنية إطار الشاشة (بعد فك zlib):                           │
- *  │  [0:21]  = header داخلي                                     │
- *  │     [9:11]  = x البداية (little-endian U16)                 │
- *  │     [13:15] = y البداية                                     │
- *  │  [21:]  = بيانات البكسل (8-bit indexed)                     │
- *  ├─────────────────────────────────────────────────────────────┤
- *  │  الأبعاد الحقيقية للشاشة: 1187 × 834 pixels                │
- *  │  إطار الشاشة الكامل (full frame): نوع 0x03 بـ byte[7]=0x02 │
- *  │  إطار تحديث جزئي (delta frame): نوع 0x03 بـ byte[7]=0x01  │
- *  └─────────────────────────────────────────────────────────────┘
- * ══════════════════════════════════════════════════════════════════
+ *  ──────────────────────────────────────────────────────────────────────
+ *  بنية الملف:
+ *    8 bytes رأس (أصفار)
+ *    كتل متكررة:
+ *      marker[0]=0x10, marker[1]=0x04
+ *      length: LE U16 (2 bytes)
+ *      data[length]
+ *
+ *  أنواع الكتل (byte[1] من data):
+ *    0x08 = رأس الملف / Metadata الرئيسي
+ *    0x03 = بيانات الشاشة  ← النوع الرئيسي
+ *    0x02 = حزم TCP مشفرة (صوت + شبكة — مشفر بـ CastEncrypt)
+ *    0x01 = Keyboard Chat (مشفر بـ CastEncrypt)
+ *
+ *  التفاصيل الدقيقة لكتل 0x03:
+ *    إذا لم تحتوِ zlib (bd[12] != 0x78):
+ *      إذا len == 44   → Metadata (أبعاد الشاشة)
+ *      إذا len == 1036 → PALETTE (256 لون RGBQUAD بدءاً من bd[12])
+ *    إذا احتوت zlib (bd[12] == 0x78):
+ *      إذا bd[6] == 0x02 → Full Frame (الشاشة كاملة)
+ *      إذا bd[6] == 0x01 → Delta Frame (تحديث جزئي)
+ *
+ *  بنية Full Frame (بعد فك zlib):
+ *    [0:9]   = أصفار
+ *    [9:11]  = Width  (LE U16) — ملاحظة: offset فردي!
+ *    [11:13] = أصفار
+ *    [13:15] = Height (LE U16) — ملاحظة: offset فردي!
+ *    [15:21] = header إضافي
+ *    [21 : 21+W*H] = pixel indices (8-bit، indexed في colorPalette)
+ *
+ *  بنية Delta Frame (بعد فك zlib):
+ *    [0:4]   = x * 256  (LE U32)
+ *    [4:8]   = y * 256  (LE U32)
+ *    [8:12]  = w * 256  (LE U32)
+ *    [12:16] = h * 256  (LE U32)
+ *    [16:20] = n * 256  (LE U32) حيث n = w * h
+ *    [20]    = zero padding
+ *    [21 : 21+w*h] = pixel indices (8-bit)
+ *
+ *  الأبعاد الحقيقية لهذا الملف: 1187 × 834 pixels
+ *  الصوت والمحادثة: مشفران بـ CastEncrypt — لا يمكن فكهما
+ * ══════════════════════════════════════════════════════════════════════
  */
 class LrecParser(private val file: File) {
 
@@ -47,39 +63,37 @@ class LrecParser(private val file: File) {
         const val BLOCK_MARKER_0 = 0x10
         const val BLOCK_MARKER_1 = 0x04
 
-        // أنواع الكتل — byte[1] من payload
-        const val TYPE_HEADER   = 0x08  // رأس الملف
-        const val TYPE_VIEWPORT = 0x03  // إطارات الشاشة (zlib)
-        const val TYPE_NETWORK  = 0x02  // حزم TCP مشفرة
-        const val TYPE_META     = 0x01  // بيانات وصفية
+        // أنواع الكتل الخارجية (byte[1])
+        const val TYPE_VIEWPORT = 0x03
+        const val TYPE_NETWORK  = 0x02
+        const val TYPE_CHAT_RAW = 0x01
+        const val TYPE_HEADER   = 0x08
 
-        // للتوافق مع LrecPlayerActivity
-        const val TYPE_AUDIO    = TYPE_NETWORK
-        const val TYPE_CHAT     = TYPE_META
-        const val TYPE_VIDEO    = TYPE_HEADER
+        // أنواع داخلية للـ parser
+        const val SUBTYPE_METADATA  = 0
+        const val SUBTYPE_PALETTE   = 1
+        const val SUBTYPE_FULLFRAME = 2
+        const val SUBTYPE_DELTA     = 3
 
         const val DEFAULT_FPS   = 5
         const val MS_PER_FRAME  = 1000L / DEFAULT_FPS
 
-        // الأبعاد الحقيقية للشاشة (مُكتشَفة من تحليل الملف)
+        // الأبعاد الحقيقية للشاشة (مُكتشَفة من التحليل العكسي الكامل)
         const val REAL_SCREEN_WIDTH  = 1187
         const val REAL_SCREEN_HEIGHT = 834
 
-        const val LINKTIVITY_SIG    = "Linktivity"
-        const val HEADER_SCAN_BYTES = 2048
+        const val LINKTIVITY_SIG = "Linktivity"
 
-        // offset بداية zlib داخل كتلة type03
-        private const val ZLIB_OFFSET = 12
-
-        // offset بداية بيانات البكسل داخل الإطار المفكوك
-        private const val PIXEL_HEADER_SIZE = 21
-
-        // offset الإحداثيات داخل الإطار المفكوك
-        private const val COORD_X_OFFSET = 9
-        private const val COORD_Y_OFFSET = 13
+        // ──────────────────────────────────────────
+        // offsets ثابتة لفك تشفير الإطارات
+        // ──────────────────────────────────────────
+        private const val ZLIB_OFFSET        = 12   // zlib يبدأ عند byte[12] في data
+        private const val FULL_WIDTH_OFFSET  = 9    // Width  عند decompressed[9]  (LE U16)
+        private const val FULL_HEIGHT_OFFSET = 13   // Height عند decompressed[13] (LE U16)
+        private const val PIXEL_DATA_OFFSET  = 21   // بيانات البكسل تبدأ عند decompressed[21]
     }
 
-    // ── نماذج البيانات ────────────────────────────────────────────
+    // ── نماذج البيانات ────────────────────────────────────────────────
 
     data class LrecMetadata(
         val sessionId:    String  = "",
@@ -93,10 +107,10 @@ class LrecParser(private val file: File) {
 
     data class LrecFrame(
         val fileOffset: Long,
-        val type:       Int,
+        val type:       Int,       // SUBTYPE_FULLFRAME أو SUBTYPE_DELTA
         val dataLength: Int,
-        val timestamp:  Long,
-        val rawData:    ByteArray
+        val timestamp:  Long,      // ميلي-ثانية من بداية التسجيل
+        val rawData:    ByteArray  // البيانات الخام للكتلة (لم تُفك ضغطها بعد)
     )
 
     data class ScreenFrameData(
@@ -104,35 +118,33 @@ class LrecParser(private val file: File) {
         val y:           Int,
         val width:       Int,
         val height:      Int,
-        val pixels:      IntArray,
+        val pixels:      IntArray, // ARGB لكل بكسل
         val isFullFrame: Boolean
     )
 
-    // ── الحالة الداخلية ───────────────────────────────────────────
+    // ── الحالة الداخلية ──────────────────────────────────────────────
     var metadata = LrecMetadata()
         private set
 
     private val _frames     = mutableListOf<LrecFrame>()
     private var _durationMs = 0L
 
-    // لوحة الألوان (256 لون — مستخرجة من الإطار الأول)
-    private val colorPalette = IntArray(256) { i ->
-        // لوحة افتراضية (رمادي) حتى نحصل على اللوحة الحقيقية
-        val v = (i * 255 / 255)
-        Color.rgb(v, v, v)
-    }
-    private var hasPalette = false
+    // لوحة الألوان (256 لون - ARGB)
+    // مُهيَّأة بالرمادي الافتراضي حتى نقرأ اللوحة الحقيقية
+    private val colorPalette = IntArray(256) { i -> Color.rgb(i, i, i) }
+    private var paletteLoaded = false
 
-    // ══════════════════════════════════════════════════════════════
-    //  الدالة الرئيسية
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    //  الدالة الرئيسية — تحليل الملف كاملاً
+    // ══════════════════════════════════════════════════════════════════
     fun parse(): Boolean {
         if (!file.exists() || file.length() < 64) return false
         return try {
             RandomAccessFile(file, "r").use { raf ->
                 parseHeader(raf)
                 scanAllFrames(raf)
-                _durationMs = estimateDuration()
+                _durationMs = if (_frames.isNotEmpty())
+                    _frames.last().timestamp + MS_PER_FRAME else 0L
                 metadata.isValid && _frames.isNotEmpty()
             }
         } catch (e: Exception) {
@@ -140,27 +152,19 @@ class LrecParser(private val file: File) {
         }
     }
 
-    // ── قراءة رأس الملف ──────────────────────────────────────────
+    // ── قراءة رأس الملف (أول 2048 byte) ─────────────────────────────
     private fun parseHeader(raf: RandomAccessFile) {
         raf.seek(0)
-        val scanSize = HEADER_SCAN_BYTES.coerceAtMost(file.length().toInt())
-        val buf      = ByteArray(scanSize)
+        val scanSize = 2048.coerceAtMost(file.length().toInt())
+        val buf = ByteArray(scanSize)
         raf.read(buf)
         val raw = String(buf, Charsets.ISO_8859_1)
 
-        val sigIdx = raw.indexOf(LINKTIVITY_SIG)
-
-        // استخراج عنوان السيرفر
         val serverAddr = raw.substringAfter("TCP:", "").substringBefore("\u0000", "")
-
-        // استخراج رقم الإصدار
-        val versionMatch = Regex("V\\d+\\.\\d+\\.\\d+\\.\\d+").find(raw)
-        val version      = versionMatch?.value ?: "V1.0.1.0"
-
-        // استخراج sessionId قبل "Linktivity"
-        val sessionId = if (sigIdx > 4) {
-            extractNullTerminatedStrings(buf, 0, sigIdx).lastOrNull() ?: ""
-        } else ""
+        val version    = Regex("V\\d+\\.\\d+\\.\\d+\\.\\d+").find(raw)?.value ?: "V1.0.1.0"
+        val sigIdx     = raw.indexOf(LINKTIVITY_SIG)
+        val sessionId  = if (sigIdx > 0)
+            extractNullStrings(buf, 0, sigIdx).lastOrNull() ?: "" else ""
 
         metadata = LrecMetadata(
             sessionId    = sessionId,
@@ -173,7 +177,7 @@ class LrecParser(private val file: File) {
         )
     }
 
-    // ── مسح جميع الكتل ───────────────────────────────────────────
+    // ── مسح جميع الكتل ───────────────────────────────────────────────
     private fun scanAllFrames(raf: RandomAccessFile) {
         var pos      = 8L
         var tsMs     = 0L
@@ -185,39 +189,38 @@ class LrecParser(private val file: File) {
             val b1 = raf.read()
 
             if (b0 == BLOCK_MARKER_0 && b1 == BLOCK_MARKER_1) {
-                val lo  = raf.read()
-                val hi  = raf.read()
+                val lo = raf.read()
+                val hi = raf.read()
                 if (lo < 0 || hi < 0) break
 
                 val dataLen = (hi shl 8) or lo
-
                 if (dataLen in 1..500_000 && pos + 4 + dataLen <= fileSize) {
-                    val data = ByteArray(dataLen)
-                    val read = raf.read(data)
+                    val blockData = ByteArray(dataLen)
+                    val read = raf.read(blockData)
 
-                    if (read == dataLen && data.size >= 2) {
-                        // ✅ التحديد الصحيح للنوع: byte[1] مباشرة
-                        val frameType = when (data[1].toInt() and 0xFF) {
-                            0x03 -> TYPE_VIEWPORT
-                            0x02 -> TYPE_NETWORK
-                            0x01 -> TYPE_META
-                            0x08 -> TYPE_HEADER
-                            else -> TYPE_META
-                        }
+                    if (read == dataLen && blockData.size >= 8) {
+                        val outerType = blockData[1].toInt() and 0xFF
 
-                        _frames.add(
-                            LrecFrame(
-                                fileOffset = pos,
-                                type       = frameType,
-                                dataLength = dataLen,
-                                timestamp  = tsMs,
-                                rawData    = data
-                            )
-                        )
+                        if (outerType == TYPE_VIEWPORT) {
+                            val subtype = classifyViewportBlock(blockData)
 
-                        // تقدم الزمن لكل إطار شاشة فقط
-                        if (frameType == TYPE_VIEWPORT) {
-                            tsMs += MS_PER_FRAME
+                            when (subtype) {
+                                SUBTYPE_PALETTE -> {
+                                    extractPalette(blockData)
+                                }
+                                SUBTYPE_FULLFRAME, SUBTYPE_DELTA -> {
+                                    _frames.add(
+                                        LrecFrame(
+                                            fileOffset = pos,
+                                            type       = subtype,
+                                            dataLength = dataLen,
+                                            timestamp  = tsMs,
+                                            rawData    = blockData
+                                        )
+                                    )
+                                    tsMs += MS_PER_FRAME
+                                }
+                            }
                         }
                     }
                     pos += 4 + dataLen
@@ -230,175 +233,186 @@ class LrecParser(private val file: File) {
         }
     }
 
-    private fun estimateDuration(): Long {
-        if (_frames.isEmpty()) return 0L
-        return _frames.last().timestamp + MS_PER_FRAME
+    /**
+     * تصنيف كتلة TYPE_VIEWPORT:
+     *   - لا zlib + طول صغير  -> metadata أو palette
+     *   - zlib + bd[6]=0x02   -> full frame
+     *   - zlib + bd[6]=0x01   -> delta frame
+     */
+    private fun classifyViewportBlock(blockData: ByteArray): Int {
+        if (blockData.size < 13) return SUBTYPE_METADATA
+
+        val b12 = blockData[12].toInt() and 0xFF
+        val b13 = if (blockData.size > 13) blockData[13].toInt() and 0xFF else 0
+        val hasZlib = (b12 == 0x78) && (b13 in listOf(0x01, 0x5E, 0x9C, 0xDA))
+
+        return if (!hasZlib) {
+            when {
+                blockData.size == 44   -> SUBTYPE_METADATA
+                blockData.size == 1036 -> SUBTYPE_PALETTE
+                else                   -> SUBTYPE_METADATA
+            }
+        } else {
+            val frameFlag = blockData[6].toInt() and 0xFF
+            if (frameFlag == 0x02) SUBTYPE_FULLFRAME else SUBTYPE_DELTA
+        }
     }
 
-    // ══════════════════════════════════════════════════════════════
-    //  فك ضغط zlib لإطار شاشة
-    // ══════════════════════════════════════════════════════════════
-    private fun decompressFrame(rawData: ByteArray): ByteArray? {
-        if (rawData.size <= ZLIB_OFFSET + 2) return null
+    // ── استخراج لوحة الألوان من كتلة PALETTE ────────────────────────
+    private fun extractPalette(blockData: ByteArray) {
+        if (blockData.size < 12 + 1024) return
+        val start = 12
+        for (i in 0 until 256) {
+            val blue  = blockData[start + i * 4].toInt()     and 0xFF
+            val green = blockData[start + i * 4 + 1].toInt() and 0xFF
+            val red   = blockData[start + i * 4 + 2].toInt() and 0xFF
+            colorPalette[i] = Color.rgb(red, green, blue)
+        }
+        paletteLoaded = true
+    }
 
-        // ✅ تحقق من وجود zlib header عند offset 12
-        val b0 = rawData[ZLIB_OFFSET].toInt() and 0xFF
-        val b1 = rawData[ZLIB_OFFSET + 1].toInt() and 0xFF
-        val hasZlibHeader = (b0 == 0x78) && (b1 in listOf(0x01, 0x5E, 0x9C, 0xDA))
+    // ══════════════════════════════════════════════════════════════════
+    //  فك ضغط كتلة بـ zlib (مع دعم incomplete streams)
+    // ══════════════════════════════════════════════════════════════════
+    private fun zlibDecompress(blockData: ByteArray): ByteArray? {
+        if (blockData.size <= ZLIB_OFFSET + 2) return null
+        val b12 = blockData[ZLIB_OFFSET].toInt() and 0xFF
+        val b13 = blockData[ZLIB_OFFSET + 1].toInt() and 0xFF
+        val hasZlib = (b12 == 0x78) && (b13 in listOf(0x01, 0x5E, 0x9C, 0xDA))
+        if (!hasZlib) return null
 
-        if (!hasZlibHeader) return null
+        val inflater = Inflater()
+        inflater.setInput(blockData, ZLIB_OFFSET, blockData.size - ZLIB_OFFSET)
 
+        val buf = ByteArray(1_200_000)
         return try {
-            val inflater = Inflater()
-            inflater.setInput(rawData, ZLIB_OFFSET, rawData.size - ZLIB_OFFSET)
-            val output = ByteArray(REAL_SCREEN_WIDTH * REAL_SCREEN_HEIGHT + 256)
-            val size   = inflater.inflate(output)
+            var total = 0
+            while (!inflater.finished() && !inflater.needsInput() && total < buf.size) {
+                val n = inflater.inflate(buf, total, buf.size - total)
+                if (n <= 0) break
+                total += n
+            }
             inflater.end()
-            if (size > 0) output.copyOf(size) else null
+            if (total > 0) buf.copyOf(total) else null
         } catch (e: DataFormatException) {
-            // partial decompress — بعض الإطارات مقطوعة عمداً
+            inflater.end()
+            // حاول raw deflate كبديل
+            val inf2 = Inflater(true)
+            inf2.setInput(blockData, ZLIB_OFFSET + 2, blockData.size - ZLIB_OFFSET - 2)
             try {
-                val inflater = Inflater()
-                inflater.setInput(rawData, ZLIB_OFFSET, rawData.size - ZLIB_OFFSET)
-                val buf = ByteArray(2 * 1024 * 1024)
                 var total = 0
-                while (!inflater.finished() && !inflater.needsInput()) {
-                    val n = inflater.inflate(buf, total, buf.size - total)
+                while (!inf2.finished() && !inf2.needsInput() && total < buf.size) {
+                    val n = inf2.inflate(buf, total, buf.size - total)
                     if (n <= 0) break
                     total += n
                 }
-                inflater.end()
+                inf2.end()
                 if (total > 0) buf.copyOf(total) else null
-            } catch (e2: Exception) { null }
-        } catch (e: Exception) { null }
+            } catch (e2: Exception) {
+                inf2.end()
+                null
+            }
+        } catch (e: Exception) {
+            inflater.end()
+            null
+        }
     }
 
-    // ══════════════════════════════════════════════════════════════
-    //  فك تشفير إطار الشاشة → بيانات بكسل
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    //  فك تشفير إطار شاشة -> بيانات بكسل ARGB
+    // ══════════════════════════════════════════════════════════════════
     fun decodeScreenFrame(frame: LrecFrame): ScreenFrameData? {
-        if (frame.type != TYPE_VIEWPORT) return null
-        val raw = frame.rawData
-
-        // هل الإطار full frame أم delta؟
-        // byte[7]: 0x02 = full frame, 0x01 = delta frame
-        val isFullFrame = (raw.size >= 8) && (raw[7].toInt() and 0xFF == 0x02)
-
-        // ✅ فك ضغط zlib
-        val decompressed = decompressFrame(raw) ?: return null
-        if (decompressed.size < PIXEL_HEADER_SIZE + 4) return null
+        val decompressed = zlibDecompress(frame.rawData) ?: return null
+        if (decompressed.size <= PIXEL_DATA_OFFSET) return null
 
         return try {
-            val sw = metadata.screenWidth
-            val sh = metadata.screenHeight
-
-            if (isFullFrame) {
-                // الإطار الكامل: بيانات البكسل تبدأ عند offset 21
-                val pixelData = decompressed.copyOfRange(PIXEL_HEADER_SIZE, decompressed.size)
-                val expectedPixels = sw * sh
-
-                if (pixelData.size < expectedPixels) return null
-
-                val pixels = IntArray(expectedPixels)
-                for (i in 0 until expectedPixels) {
-                    val idx = pixelData[i].toInt() and 0xFF
-                    pixels[i] = colorPalette[idx]
-                }
-
-                // ✅ استخراج لوحة الألوان من الإطار الأول الكامل إذا أمكن
-                if (!hasPalette) {
-                    tryExtractPalette(decompressed)
-                    if (hasPalette) {
-                        // أعد التحويل باللوحة الجديدة
-                        for (i in 0 until expectedPixels) {
-                            val idx = pixelData[i].toInt() and 0xFF
-                            pixels[i] = colorPalette[idx]
-                        }
-                    }
-                }
-
-                ScreenFrameData(
-                    x           = 0,
-                    y           = 0,
-                    width       = sw,
-                    height      = sh,
-                    pixels      = pixels,
-                    isFullFrame = true
-                )
-            } else {
-                // الإطار الجزئي: يحتوي إحداثيات التحديث
-                // [COORD_X_OFFSET:COORD_X_OFFSET+2] = x البداية
-                // [COORD_Y_OFFSET:COORD_Y_OFFSET+2] = y البداية
-                val x = readU16LE(decompressed, COORD_X_OFFSET)
-                val y = readU16LE(decompressed, COORD_Y_OFFSET)
-
-                val pixelData = decompressed.copyOfRange(PIXEL_HEADER_SIZE, decompressed.size)
-                if (pixelData.isEmpty()) return null
-
-                val pixelCount = pixelData.size
-                val w = when {
-                    pixelCount == 0         -> return null
-                    x + (sw - x) <= sw      -> sw - x
-                    else                    -> sw
-                }
-
-                // حساب الأبعاد من عدد البكسلات
-                val estimatedH = if (w > 0) (pixelCount / w).coerceAtLeast(1) else 1
-                val h          = estimatedH.coerceAtMost(sh - y)
-
-                if (w <= 0 || h <= 0) return null
-
-                val pixels = IntArray(w * h)
-                for (i in 0 until minOf(pixels.size, pixelData.size)) {
-                    val idx  = pixelData[i].toInt() and 0xFF
-                    pixels[i] = colorPalette[idx]
-                }
-
-                ScreenFrameData(
-                    x           = x.coerceIn(0, sw - 1),
-                    y           = y.coerceIn(0, sh - 1),
-                    width       = w,
-                    height      = h,
-                    pixels      = pixels,
-                    isFullFrame = false
-                )
+            when (frame.type) {
+                SUBTYPE_FULLFRAME -> decodeFullFrame(decompressed)
+                SUBTYPE_DELTA     -> decodeDeltaFrame(decompressed)
+                else              -> null
             }
         } catch (e: Exception) { null }
     }
 
-    // ── محاولة استخراج لوحة الألوان من بيانات الإطار الأول ──────
-    private fun tryExtractPalette(decompressedFrame: ByteArray) {
-        // في بعض الإطارات الكاملة الأولى تُخزَّن لوحة ألوان 256×4 bytes
-        // قبل بيانات البكسل عند offset 21
-        // حجم اللوحة = 256 * 4 = 1024 bytes
-        val paletteStart = PIXEL_HEADER_SIZE
-        val paletteEnd   = paletteStart + 256 * 4
+    /**
+     * فك تشفير الإطار الكامل:
+     *   - decompressed[9:11]  = Width  (LE U16)
+     *   - decompressed[13:15] = Height (LE U16)
+     *   - decompressed[21:]   = pixel indices (8-bit)
+     */
+    private fun decodeFullFrame(raw: ByteArray): ScreenFrameData? {
+        if (raw.size < PIXEL_DATA_OFFSET + 100) return null
 
-        if (decompressedFrame.size < paletteEnd + 100) return
-
-        // فحص صحة اللوحة: كل إدخال RGBQUAD = R,G,B,Reserved
-        var valid = 0
-        for (i in 0 until 256) {
-            val r = decompressedFrame[paletteStart + i*4].toInt() and 0xFF
-            val g = decompressedFrame[paletteStart + i*4+1].toInt() and 0xFF
-            val b = decompressedFrame[paletteStart + i*4+2].toInt() and 0xFF
-            if (r in 0..255 && g in 0..255 && b in 0..255) valid++
+        val w = readU16LE(raw, FULL_WIDTH_OFFSET).let {
+            if (it in 100..3840) it else REAL_SCREEN_WIDTH
+        }
+        val h = readU16LE(raw, FULL_HEIGHT_OFFSET).let {
+            if (it in 100..2160) it else REAL_SCREEN_HEIGHT
         }
 
-        if (valid < 200) return  // لوحة غير صالحة
+        val pixelCount = w * h
+        if (raw.size < PIXEL_DATA_OFFSET + pixelCount) return null
 
-        for (i in 0 until 256) {
-            val r = decompressedFrame[paletteStart + i*4].toInt() and 0xFF
-            val g = decompressedFrame[paletteStart + i*4+1].toInt() and 0xFF
-            val b = decompressedFrame[paletteStart + i*4+2].toInt() and 0xFF
-            colorPalette[i] = Color.rgb(r, g, b)
+        val pixels = IntArray(pixelCount)
+        for (i in 0 until pixelCount) {
+            val idx = raw[PIXEL_DATA_OFFSET + i].toInt() and 0xFF
+            pixels[i] = colorPalette[idx]
         }
-        hasPalette = true
+
+        return ScreenFrameData(
+            x           = 0,
+            y           = 0,
+            width       = w,
+            height      = h,
+            pixels      = pixels,
+            isFullFrame = true
+        )
     }
 
-    // ══════════════════════════════════════════════════════════════
+    /**
+     * فك تشفير الإطار الجزئي (delta):
+     *   Header = 5 x U32LE، كل قيمة = القيمة الحقيقية * 256
+     *   [0:4]  = x * 256
+     *   [4:8]  = y * 256
+     *   [8:12] = w * 256
+     *   [12:16]= h * 256
+     *   [16:20]= n * 256  (n = w * h)
+     *   [20]   = zero padding
+     *   [21:]  = pixel indices
+     */
+    private fun decodeDeltaFrame(raw: ByteArray): ScreenFrameData? {
+        if (raw.size < PIXEL_DATA_OFFSET + 1) return null
+
+        val x = (readU32LE(raw, 0)  shr 8).toInt()
+        val y = (readU32LE(raw, 4)  shr 8).toInt()
+        val w = (readU32LE(raw, 8)  shr 8).toInt()
+        val h = (readU32LE(raw, 12) shr 8).toInt()
+
+        if (w <= 0 || h <= 0 || w > REAL_SCREEN_WIDTH || h > REAL_SCREEN_HEIGHT) return null
+        if (x < 0 || y < 0 || x + w > REAL_SCREEN_WIDTH || y + h > REAL_SCREEN_HEIGHT) return null
+
+        val pixelCount = w * h
+        if (raw.size < PIXEL_DATA_OFFSET + pixelCount) return null
+
+        val pixels = IntArray(pixelCount)
+        for (i in 0 until pixelCount) {
+            val idx = raw[PIXEL_DATA_OFFSET + i].toInt() and 0xFF
+            pixels[i] = colorPalette[idx]
+        }
+
+        return ScreenFrameData(
+            x           = x,
+            y           = y,
+            width       = w,
+            height      = h,
+            pixels      = pixels,
+            isFullFrame = false
+        )
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  تطبيق إطار على Bitmap الحالي
-    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
     fun applyFrameToBitmap(bitmap: Bitmap, frameData: ScreenFrameData) {
         if (frameData.isFullFrame) {
             bitmap.setPixels(
@@ -411,7 +425,7 @@ class LrecParser(private val file: File) {
         } else {
             val safeX = frameData.x.coerceIn(0, bitmap.width  - 1)
             val safeY = frameData.y.coerceIn(0, bitmap.height - 1)
-            val safeW = frameData.width.coerceAtMost(bitmap.width  - safeX)
+            val safeW = frameData.width .coerceAtMost(bitmap.width  - safeX)
             val safeH = frameData.height.coerceAtMost(bitmap.height - safeY)
             if (safeW > 0 && safeH > 0 && frameData.pixels.size >= safeW * safeH) {
                 bitmap.setPixels(
@@ -424,28 +438,16 @@ class LrecParser(private val file: File) {
         }
     }
 
-    // ══════════════════════════════════════════════════════════════
-    //  استخراج نص المحادثة (من كتل Type01)
-    // ══════════════════════════════════════════════════════════════
-    fun decodeChatFrame(frame: LrecFrame): String? {
-        if (frame.rawData.size < 5) return null
-        return try {
-            val text = String(frame.rawData, 4, frame.rawData.size - 4, Charsets.UTF_8)
-                .trim()
-                .filter { it >= ' ' }
-            text.takeIf { it.length > 1 }
-        } catch (e: Exception) { null }
-    }
-
-    // ══════════════════════════════════════════════════════════════
-    //  واجهة استرجاع الإطارات
-    // ══════════════════════════════════════════════════════════════
-    fun getAllFrames():    List<LrecFrame> = _frames.toList()
-    fun getScreenFrames():List<LrecFrame> = _frames.filter { it.type == TYPE_VIEWPORT }
-    fun getAudioFrames(): List<LrecFrame> = _frames.filter { it.type == TYPE_NETWORK }
-    fun getChatFrames():  List<LrecFrame> = _frames.filter { it.type == TYPE_META }
-    fun getDurationMs():  Long            = _durationMs
-    fun getTotalFrames(): Int             = _frames.size
+    // ══════════════════════════════════════════════════════════════════
+    //  واجهة استرجاع البيانات
+    // ══════════════════════════════════════════════════════════════════
+    fun getAllFrames()    : List<LrecFrame> = _frames.toList()
+    fun getScreenFrames(): List<LrecFrame>  = _frames.toList()
+    fun getAudioFrames() : List<LrecFrame>  = emptyList()
+    fun getChatFrames()  : List<LrecFrame>  = emptyList()
+    fun getDurationMs()  : Long             = _durationMs
+    fun getTotalFrames() : Int              = _frames.size
+    fun isPaletteLoaded(): Boolean          = paletteLoaded
 
     fun getFrameAtTime(timeMs: Long): LrecFrame? =
         _frames.minByOrNull { kotlin.math.abs(it.timestamp - timeMs) }
@@ -453,16 +455,28 @@ class LrecParser(private val file: File) {
     fun getFramesBetween(startMs: Long, endMs: Long): List<LrecFrame> =
         _frames.filter { it.timestamp in startMs..endMs }
 
-    // ── مساعدات ───────────────────────────────────────────────────
+    // للتوافق مع الكود القديم
+    fun decodeChatFrame(frame: LrecFrame): String? = null
+
+    // ── مساعدات ──────────────────────────────────────────────────────
     private fun readU16LE(data: ByteArray, offset: Int): Int {
         if (offset + 1 >= data.size) return 0
-        return ((data[offset + 1].toInt() and 0xFF) shl 8) or (data[offset].toInt() and 0xFF)
+        return (data[offset].toInt() and 0xFF) or
+               ((data[offset + 1].toInt() and 0xFF) shl 8)
     }
 
-    private fun extractNullTerminatedStrings(buf: ByteArray, start: Int, maxLen: Int): List<String> {
+    private fun readU32LE(data: ByteArray, offset: Int): Long {
+        if (offset + 3 >= data.size) return 0L
+        return  (data[offset].toLong()     and 0xFF) or
+               ((data[offset+1].toLong()   and 0xFF) shl  8) or
+               ((data[offset+2].toLong()   and 0xFF) shl 16) or
+               ((data[offset+3].toLong()   and 0xFF) shl 24)
+    }
+
+    private fun extractNullStrings(buf: ByteArray, start: Int, maxLen: Int): List<String> {
         val result = mutableListOf<String>()
-        var s      = start
-        val end    = (start + maxLen).coerceAtMost(buf.size)
+        var s = start
+        val end = (start + maxLen).coerceAtMost(buf.size)
         for (i in start until end) {
             if (buf[i] == 0.toByte()) {
                 if (i > s) {
